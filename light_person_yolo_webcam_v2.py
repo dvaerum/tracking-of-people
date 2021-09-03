@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 # USAGE
-# python yolo_video_webcam.py --yolo yolo-coco
-
+# python light_person_yolo_webcam_v2.py --yolo yolo-coco
+# python light_person_yolo_webcam_v2.py --use-gpu 1 --yolo yolo-coco
 # ex: set tabstop=8 softtabstop=0 expandtab shiftwidth=2 smarttab:
 
 # import the necessary packages
@@ -34,6 +34,10 @@ ap.add_argument("-c", "--confidence", type=float, default=0.5,
   help="minimum probability to filter weak detections")
 ap.add_argument("-t", "--threshold", type=float, default=0.3,
   help="threshold when applyong non-maxima suppression")
+ap.add_argument("-u", "--use-gpu", type=int, default=0,
+	help="boolean indicating if CUDA GPU should be used")
+ap.add_argument("-co", "--codec", type=int, default=0,
+	help="chose codec for compression, 0 = MJEG, 1=H264")
 args = vars(ap.parse_args())
 
 
@@ -78,6 +82,13 @@ configPath = os.path.sep.join([args["yolo"], "yolov3.cfg"])
 # and determine only the *output* layer names that we need from YOLO
 print("[INFO] loading YOLO from disk...")
 net = cv2.dnn.readNetFromDarknet(configPath, weightsPath)
+print(args["use_gpu"])
+if args["use_gpu"]:
+	# set CUDA as the preferable backend and target
+	print("[INFO] setting preferable backend and target to CUDA...")
+	net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+	net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+
 ln = net.getLayerNames()
 ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
@@ -85,7 +96,7 @@ ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 # frame dimensions
 #vs = cv2.VideoCapture(args["input"])
 print("[INFO] starting video stream...")
-vs = VideoStream(src=0).start()
+vs = VideoStream(src=3).start()
 time.sleep(2.0)
 #writer = None
 (W, H) = (None, None)
@@ -245,6 +256,7 @@ while True:
 print("[INFO] cleaning up...")
 #writer.release()
 vs.stop()
-#vs.release()
+
 cv2.destroyAllWindows()
+vs.release()
 
