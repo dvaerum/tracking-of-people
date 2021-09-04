@@ -5,23 +5,24 @@
 
 import socket
 import sys
-import importlib
+import importlib, client_misc
 import json
 import argparse
+import os
 
 from dmx_allan import PyDMX, DMXlight
 
 from pprint import pprint as pp
 
-args = argparse.ArgumentParser()
-args.add_argument("--host", required=True,
+parser = argparse.ArgumentParser()
+parser.add_argument("--host", required=True,
                   help="Host/IP for the server")
-args.add_argument("--tty", required=True,
+parser.add_argument("--tty", required=True,
                   help="The serial port used for DMX")
-args.add_argument("--x-constant", required=False, type=float, default=0.6)
-args.add_argument("--y-constant", required=False, type=float, default=0.6)
+parser.add_argument("--x-constant", required=False, type=float, default=0.6)
+parser.add_argument("--y-constant", required=False, type=float, default=0.6)
 
-args = args.parse_args()
+args = parser.parse_args()
 
 # Create a TCP/IP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -35,17 +36,22 @@ dmx.start()
 light = DMXlight(dmx)
 light.degrees(359, 0)
 
-x_constant = (1920 / 61) * args.x_constant * -1
-# x_constant = 43
-y_constant = (1080 / 32) * args.y_constant * -1
-
 try:
     while True:
-        data = json.loads(sock.recv(4096).decode('utf-8'))
+        try:
+            data = json.loads(sock.recv(4096).decode('utf-8'))
+        except json.decoder.JSONDecodeError:
+            data = None
+
         if data:
             data = sorted(data, key=lambda x: x['class_id'])[0]
 
             class_id = data['class_id']
+
+            # Reload calc module
+            if os.path.isfile(client_misc.__file__):
+                importlib.reload(client_misc)
+
             if class_id == 0:
                 dmx.setData(5, 0)
             elif class_id == 56:
@@ -56,20 +62,18 @@ try:
                 # blue: 110
                 dmx.setData(5, 110)
             else:
-                dmx.setData(8, 0)
-                continue
+                if client_misc.skip_class_id(class_id):
+                  dmx.setData(8, 0)
+                  continue
 
             dmx.setData(8, 100)
-            x_center = (data['x'] + (data['width'] / 2))
-            x_degrees = 35 + x_center / x_constant
-            if x_degrees > 360.0:
-                x_degrees = x_degrees - 360.0
-            elif x_degrees < 0:
-                x_degrees = x_degrees + 360.0
 
-            y_degrees = 24 + data['y'] / y_constant
-            print('class_id: {}, x: {}, y:{}'.format(data['class_id'], x_degrees, y_degrees))
+            x_degrees, y_degrees = client_misc.pixel2degrees(
+              data['x'], data['width'],
+              data['y'], data['height'],
+            )
             light.degrees(x_degrees, y_degrees)
+            print('class_id: {}, x: {}, y:{}'.format(data['class_id'], x_degrees, y_degrees))
 
         else:
             light.degrees(0, 90)
@@ -77,3 +81,4 @@ try:
 
 except KeyboardInterrupt:
     dmx.stop()
+
